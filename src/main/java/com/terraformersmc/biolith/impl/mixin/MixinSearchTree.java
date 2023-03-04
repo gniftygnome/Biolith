@@ -26,6 +26,11 @@ public class MixinSearchTree<T> implements InterfaceSearchTree<T> {
     private final ThreadLocal<MultiNoiseUtil.SearchTree.TreeLeafNode<T>> previousUltimateNode = new ThreadLocal<>();
     private final ThreadLocal<MultiNoiseUtil.SearchTree.TreeLeafNode<T>> previousPenultimateNode = new ThreadLocal<>();
 
+    /*
+     * This is a flattened, stack-based implementation of Mojang's recursive RTree search.
+     * We also find the second-best fit, which can significantly expand the scope of the traversal.
+     * Because of this, we needed an implementation with better performance than Mojang's.
+     */
     public BiolithFittestNodes<T> biolith$searchTreeGet(MultiNoiseUtil.NoiseValuePoint point, MultiNoiseUtil.NodeDistanceFunction<T> distanceFunction) {
         long[] otherParameters = point.getNoiseValueList();
         MultiNoiseUtil.SearchTree.TreeNode<T> node = firstNode;
@@ -67,6 +72,7 @@ public class MixinSearchTree<T> implements InterfaceSearchTree<T> {
             }
         }
 
+        // Iteratively search the tree using a stack of simple array iterators to track our position
         while (stack[stackDepth].hasNext()) {
             // Advance to the next available branch node
             node = stack[stackDepth].next();
@@ -100,23 +106,15 @@ public class MixinSearchTree<T> implements InterfaceSearchTree<T> {
             }
         }
 
-        // TODO: testing
-        if (false) {
-            if (penultimate == null) {
-                Biolith.LOGGER.debug("FOUND 1 (no second): {} ({}), - ({})", biolith$keyOf(ultimate).getValue(), ultimateDistance, penultimateDistance);
-            } else {
-                Biolith.LOGGER.debug("FOUND 1,2: {} ({}), {} ({})", biolith$keyOf(ultimate).getValue(), ultimateDistance, biolith$keyOf(penultimate).getValue(), penultimateDistance);
-            }
-        }
-
-        previousUltimateNode.set(ultimate);
-
-        if (penultimate != null) {
+        // Store the second-best (or if none, best) fit we found to use as our search fallback
+        // Return the first- and second-best fit nodes, as well as their fitness (squared n-dimensional distance)
+        if (penultimate == null) {
+            previousUltimateNode.set(ultimate);
+            return new BiolithFittestNodes<>(ultimate, ultimateDistance);
+        } else {
             previousPenultimateNode.set(penultimate);
             return new BiolithFittestNodes<>(ultimate, ultimateDistance, penultimate, penultimateDistance);
         }
-
-        return new BiolithFittestNodes<>(ultimate, ultimateDistance);
     }
 
     private @NotNull RegistryKey<?> biolith$keyOf(@Nullable MultiNoiseUtil.SearchTree.TreeLeafNode<T> leafNode) {
