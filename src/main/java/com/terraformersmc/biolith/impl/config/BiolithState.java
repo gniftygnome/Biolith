@@ -14,12 +14,12 @@ import net.minecraft.world.biome.Biome;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class BiolithState extends PersistentState {
-    private final LinkedHashMap<RegistryKey<Biome>, Set<RegistryKey<Biome>>> biomeReplacements = new LinkedHashMap<>(64);
+    private final LinkedHashMap<RegistryKey<Biome>, LinkedHashSet<RegistryKey<Biome>>> biomeReplacements = new LinkedHashMap<>(64);
     private final ServerWorld world;
 
     private final String stateId;
@@ -43,7 +43,6 @@ public class BiolithState extends PersistentState {
         world.getPersistentStateManager().save();
     }
 
-// TODO: lots of debug logging below
     private void readState() {
         NbtCompound nbt = null;
         NbtCompound nbtState = null;
@@ -58,36 +57,39 @@ public class BiolithState extends PersistentState {
             nbtState = nbt.getCompound("data");
         }
 
-Biolith.LOGGER.warn("{}: Starting read of state", stateId);
         biomeReplacements.clear();
         if (nbtState != null && !nbtState.isEmpty()) {
-Biolith.LOGGER.warn("{}: State is not empty", stateId);
             NbtList biomeReplacementsNbt = nbtState.getList("BiomeReplacementsList", NbtList.LIST_TYPE);
             biomeReplacementsNbt.forEach(nbtElement -> {
-Biolith.LOGGER.warn("{}: Reading state element: {}", stateId, nbtElement);
-                NbtList replacementsNbt = (NbtList) nbtElement;
-                RegistryKey<Biome> target = RegistryKey.of(RegistryKeys.BIOME, Identifier.tryParse(replacementsNbt.getString(0)));
-                replacementsNbt.remove(0);
-                biomeReplacements.put(target, replacementsNbt.stream()
-                        .map(element -> RegistryKey.of(RegistryKeys.BIOME, Identifier.tryParse(element.asString())))
-                        .collect(Collectors.toCollection(LinkedHashSet::new)));
-Biolith.LOGGER.warn("Resolved replacements list from NBT: {} -> {}", target, biomeReplacements.get(target));
+                NbtList replacementsNbt = (NbtList) nbtElement.copy();
+                Identifier elementId = Identifier.tryParse(replacementsNbt.getString(0));
+                if (elementId == null) {
+                    Biolith.LOGGER.warn("{}: Failed to parse target biome identifier from NBT: {}", stateId, replacementsNbt.getString(0));
+                } else if (replacementsNbt.size() < 2) {
+                    Biolith.LOGGER.warn("{}: Replacements list from NBT contains no replacements: {}", stateId, replacementsNbt.getString(0));
+                } else {
+                    RegistryKey<Biome> target = RegistryKey.of(RegistryKeys.BIOME, elementId);
+                    replacementsNbt.remove(0);
+                    biomeReplacements.put(target, replacementsNbt.stream()
+                            .map(element -> Identifier.tryParse(element.asString())).filter(Objects::nonNull)
+                            .map(id -> RegistryKey.of(RegistryKeys.BIOME, id))
+                            .collect(Collectors.toCollection(LinkedHashSet::new)));
+                    Biolith.LOGGER.debug("{}: Resolved replacements list from NBT: {} -> {}", stateId, target.getValue(), biomeReplacements.get(target).stream().map(RegistryKey::getValue).toList());
+                }
             });
         }
     }
 
     @Override
     public NbtCompound writeNbt(NbtCompound nbt) {
-Biolith.LOGGER.warn("{}: Starting write of state", stateId);
         NbtList biomeReplacementsNbt = new NbtList();
         biomeReplacements.forEach((target, replacements) -> {
-Biolith.LOGGER.warn("{}: Writing replacemnts for: {}", stateId, target.getValue());
             NbtList replacementsNbt = new NbtList();
             replacementsNbt.add(NbtString.of(target.getValue().toString()));
             replacementsNbt.addAll(replacements.stream().map(replacement -> NbtString.of(replacement.getValue().toString())).toList());
             biomeReplacementsNbt.add(replacementsNbt);
         });
-Biolith.LOGGER.warn("{}: Describing biome replacemnts NBT:\n{}", stateId, biomeReplacementsNbt);
+        Biolith.LOGGER.debug("{}: Describing biome replacemnts NBT:\n{}", stateId, biomeReplacementsNbt);
         nbt.put("BiomeReplacementsList", biomeReplacementsNbt);
 
         return nbt;

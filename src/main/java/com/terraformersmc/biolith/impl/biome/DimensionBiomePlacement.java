@@ -48,18 +48,18 @@ public abstract class DimensionBiomePlacement {
 
     public void addReplacement(RegistryKey<Biome> target, RegistryKey<Biome> biome, double rate) {
         if (biomesInjected) {
-            Biolith.LOGGER.warn("Biolith's BiomePlacement.addReplacement() called too late for biome: {}", biome.getValue());
+            Biolith.LOGGER.error("Biolith's BiomePlacement.addReplacement() called too late for biome: {}", biome.getValue());
+        } else {
+            replacementRequests.computeIfAbsent(target, ReplacementRequestSet::new).addRequest(biome, rate);
         }
-
-        replacementRequests.computeIfAbsent(target, ReplacementRequestSet::new).addRequest(biome, rate);
     }
 
     public void addSubBiome(RegistryKey<Biome> target, RegistryKey<Biome> biome, SubBiomeMatcher matcher) {
         if (biomesInjected) {
-            Biolith.LOGGER.warn("Biolith's BiomePlacement.addSubBiome() called too late for biome: {}", biome.getValue());
+            Biolith.LOGGER.error("Biolith's BiomePlacement.addSubBiome() called too late for biome: {}", biome.getValue());
+        } else {
+            subBiomeRequests.computeIfAbsent(target, SubBiomeRequestSet::new).addRequest(biome, matcher);
         }
-
-        subBiomeRequests.computeIfAbsent(target, SubBiomeRequestSet::new).addRequest(biome, matcher);
     }
 
 
@@ -67,14 +67,23 @@ public abstract class DimensionBiomePlacement {
 
     public abstract void writeBiomeParameters(Consumer<Pair<MultiNoiseUtil.NoiseHypercube, RegistryKey<Biome>>> parameters);
 
-    // This is a lazy, stupid, wrong approximation of normalizing simplex values in [-1,1] to unbiased values in [0,1].
+    // TODO: This is a lazy, stupid, wrong approximation of normalizing simplex values in [-1,1] to unbiased values in [0,1].
     protected double normalize(double value) {
         return MathHelper.clamp((value / 0.6D + 1D) / 2D, 0D, 1D);
     }
 
-    protected record ReplacementRequest(RegistryKey<Biome> biome, double rate, RegistryEntry<Biome> biomeEntry, double scaled, boolean isComplete) {
+    protected record ReplacementRequest(RegistryKey<Biome> biome, double rate, RegistryEntry<Biome> biomeEntry, double scaled) {
         static ReplacementRequest of(RegistryKey<Biome> biome, double rate) {
-            return new ReplacementRequest(biome, rate, null, rate, false);
+            return new ReplacementRequest(biome, rate, null, rate);
+        }
+
+        @Override
+        public boolean equals(Object object) {
+            if (object instanceof ReplacementRequest request) {
+                return request.biome.equals(this.biome) && request.rate == this.rate;
+            }
+
+            return false;
         }
 
         @Override
@@ -83,10 +92,12 @@ public abstract class DimensionBiomePlacement {
         }
 
         ReplacementRequest complete(Registry<Biome> biomeRegistry, double scaled) {
-            if (this.isComplete) {
+            // Requests must be re-completed after every server restart in case the biome registry has changed.
+            // But don't mess with the place-holder; it's always complete and re-completing it will crash.
+            if (this.biome.equals(VANILLA_PLACEHOLDER)) {
                 return this;
             } else {
-                return new ReplacementRequest(biome, rate, biomeRegistry.getEntry(biomeRegistry.getOrThrow(biome)), scaled, true);
+                return new ReplacementRequest(biome, rate, biomeRegistry.getEntry(biomeRegistry.getOrThrow(biome)), scaled);
             }
         }
     }
@@ -112,9 +123,14 @@ public abstract class DimensionBiomePlacement {
             }
         }
 
-        // TODO: buggy at server restart (need to address re-submitting or re-finalizing entries)
         void complete(Registry<Biome> biomeRegistry) {
             double totalScale = 0D;
+
+            // Re-open the list for modification.
+            requests = new ArrayList<>(requests);
+
+            // If an integrated server restarts, we need to clear out the previous vanilla place-holder.
+            requests.removeIf(request -> request.biome.equals(VANILLA_PLACEHOLDER));
 
             // Calculate biome distribution scale.
             for (ReplacementRequest request : requests) {
@@ -126,7 +142,7 @@ public abstract class DimensionBiomePlacement {
             double fullScale = totalScale / scale;
 
             // Add a special request with a place-holder for the vanilla biome, if/when it still generates.
-            requests.add(new ReplacementRequest(VANILLA_PLACEHOLDER, 0D, null, 1.0D - scale, true));
+            requests.add(new ReplacementRequest(VANILLA_PLACEHOLDER, 0D, null, 1.0D - scale));
 
             // Update saved state with any additions and fetch the new order.
             Collections.shuffle(requests, seedRandom);
@@ -141,23 +157,29 @@ public abstract class DimensionBiomePlacement {
         }
     }
 
-    protected record SubBiomeRequest(RegistryKey<Biome> biome, SubBiomeMatcher matcher, RegistryEntry<Biome> biomeEntry, boolean isComplete) {
+    protected record SubBiomeRequest(RegistryKey<Biome> biome, SubBiomeMatcher matcher, RegistryEntry<Biome> biomeEntry) {
         static SubBiomeRequest of(RegistryKey<Biome> biome, SubBiomeMatcher matcher) {
-            return new SubBiomeRequest(biome, matcher, null, false);
+            return new SubBiomeRequest(biome, matcher, null);
+        }
+
+        @Override
+        public boolean equals(Object object) {
+            if (object instanceof SubBiomeRequest request) {
+                return request.biome.equals(this.biome) && request.matcher.equals(this.matcher);
+            }
+
+            return false;
         }
 
         @Override
         public int hashCode() {
-            // TODO: plus somehow consider the validity ranges
+            // TODO: plus somehow consider the validity ranges?
             return biome.hashCode();
         }
 
         SubBiomeRequest complete(Registry<Biome> biomeRegistry) {
-            if (this.isComplete) {
-                return this;
-            } else {
-                return new SubBiomeRequest(biome, matcher, biomeRegistry.getEntry(biomeRegistry.getOrThrow(biome)), true);
-            }
+            // Requests must be re-completed after every server restart in case the biome registry has changed.
+            return new SubBiomeRequest(biome, matcher, biomeRegistry.getEntry(biomeRegistry.getOrThrow(biome)));
         }
     }
 
@@ -174,7 +196,6 @@ public abstract class DimensionBiomePlacement {
         }
 
         void addRequest(SubBiomeRequest request) {
-            // TODO: should we even check anything here?
             if (requests.contains(request)) {
                 Biolith.LOGGER.info("Ignoring request for duplicate sub-biome: {} -> {}", target, request.biome);
             } else {
@@ -183,6 +204,9 @@ public abstract class DimensionBiomePlacement {
         }
 
         void complete(Registry<Biome> biomeRegistry) {
+            // Re-open the list for modification.
+            requests = new ArrayList<>(requests);
+
             // Finalize the request list and store it in a somewhat stable order.
             requests = requests.stream()
                     .map(request -> request.complete(biomeRegistry))

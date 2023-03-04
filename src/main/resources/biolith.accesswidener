@@ -1,9 +1,6 @@
 accessWidener   v1  named
 
 accessible  field   net/minecraft/server/world/ThreadedAnvilChunkStorage chunkGenerator Lnet/minecraft/world/gen/chunk/ChunkGenerator;
-accessible  class   net/minecraft/world/biome/source/MultiNoiseBiomeSource$Instance
-accessible  class   net/minecraft/world/biome/source/MultiNoiseBiomeSource$Preset
-accessible  field   net/minecraft/world/biome/source/MultiNoiseBiomeSource$Preset id Lnet/minecraft/util/Identifier;
 accessible  method  net/minecraft/world/biome/source/util/MultiNoiseUtil$Entries getValue (Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$NoiseValuePoint;Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$NodeDistanceFunction;)Ljava/lang/Object;
 accessible  field   net/minecraft/world/biome/source/util/MultiNoiseUtil$Entries tree Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$SearchTree;
 accessible  class   net/minecraft/world/biome/source/util/MultiNoiseUtil$NodeDistanceFunction

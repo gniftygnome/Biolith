@@ -9,7 +9,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
-// TODO: remove debug logging
 public class SurfaceRuleCollector {
     public static final SurfaceRuleCollector END = new SurfaceRuleCollector();
     public static final SurfaceRuleCollector NETHER = new SurfaceRuleCollector();
@@ -18,7 +17,6 @@ public class SurfaceRuleCollector {
     private final HashMap<Identifier, List<MaterialRules.MaterialRule>> MATERIAL_RULES = new HashMap<>(16);
 
     public void add(Identifier ruleOwner, MaterialRules.MaterialRule... materialRules) {
-Biolith.LOGGER.warn("Adding surface rules for '{}'", ruleOwner);
         if (materialRules.length > 0) {
             MATERIAL_RULES.computeIfAbsent(ruleOwner, ignored -> new ArrayList<>(4))
                     .addAll(Arrays.stream(materialRules).toList());
@@ -37,7 +35,6 @@ Biolith.LOGGER.warn("Adding surface rules for '{}'", ruleOwner);
     }
 
     public MaterialRules.MaterialRule[] getAll() {
-Biolith.LOGGER.warn("Surface rules requested...");
         MaterialRules.MaterialRule[] rules = new MaterialRules.MaterialRule[0];
         return MATERIAL_RULES.keySet().stream()
                 .map(this::get)

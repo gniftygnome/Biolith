@@ -8,7 +8,6 @@ import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-import net.minecraft.world.gen.densityfunction.DensityFunctions;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2fc;
 
@@ -26,7 +25,7 @@ import java.util.List;
  * <li/> INTERIOR - Targets noise values near the center of the biome's noise range
  * </ul>
  */
-@SuppressWarnings("unused")
+@SuppressWarnings({"unused", "UnusedReturnValue"})
 public class SubBiomeMatcher {
     private final List<Criterion> criteria;
 
@@ -279,7 +278,6 @@ public class SubBiomeMatcher {
                 if (replacementRange != null) {
                     // Replacement noise at the ends of the spectrum have centers at their extremities; thus the crap.
                     // replacementRange: x is min and y is max
-                    float center;
                     if (replacementRange.x() <= 0f) {
                         if (replacementRange.y() < 1f) {
                             comparable = Math.max(replacementNoise, comparable);
@@ -293,7 +291,9 @@ public class SubBiomeMatcher {
             } else if (target == CriterionTargets.EDGE) {
                 // Vanilla biomes pre-Biolith replacement
                 if (fittestNodes.penultimate() == null) {
-                    comparable = 1.0f;
+                    comparable = 1f;
+                } else if (fittestNodes.penultimateDistance() == 0) {
+                    comparable = 0f;
                 } else {
                     comparable = (float) (fittestNodes.penultimateDistance() - fittestNodes.ultimateDistance()) / (float) fittestNodes.penultimateDistance();
                 }
@@ -311,12 +311,6 @@ public class SubBiomeMatcher {
                         comparable = Math.min(Math.min(replacementNoise - replacementRange.x(), replacementRange.y() - replacementNoise), comparable);
                     }
                 }
-// TODO: old version
-//                if (fittestNodes.ultimateDistance() == 0) {
-//                    comparable = 0f;
-//                } else {
-//                    comparable = ((float) fittestNodes.ultimateDistance()) / ((float) fittestNodes.penultimateDistance());
-//                }
             }
 
             return invert == (comparable >= this.min() && comparable <= this.max());

@@ -1,14 +1,14 @@
 package com.terraformersmc.biolith.impl.mixin;
 
+import com.mojang.datafixers.util.Either;
 import com.terraformersmc.biolith.impl.biome.BiolithFittestNodes;
 import com.terraformersmc.biolith.impl.biome.BiomeCoordinator;
 import com.terraformersmc.biolith.impl.biome.InterfaceSearchTree;
 import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.MultiNoiseBiomeSource;
+import net.minecraft.world.biome.source.MultiNoiseBiomeSourceParameterList;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,23 +16,21 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.Optional;
-
 @Mixin(MultiNoiseBiomeSource.class)
-@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
 public class MixinMultiNoiseBiomeSource {
     @Shadow
-    @Final
-    private MultiNoiseUtil.Entries<RegistryEntry<Biome>> biomeEntries;
+    private MultiNoiseUtil.Entries<RegistryEntry<Biome>> getBiomeEntries() { return null; }
 
-    private boolean biolith$isNether;
-    private boolean biolith$isOverworld;
+    private boolean biolith$isNether = false;
+    private boolean biolith$isOverworld = false;
 
     // We have to evaluate what world we are in a *lot* so we want these answers precomputed as booleans we can check.
-    @Inject(method = "<init>(Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$Entries;Ljava/util/Optional;)V", at = @At("RETURN"))
-    private void biolith$MultiNoiseBiomeSource(MultiNoiseUtil.Entries<RegistryEntry<Biome>> biomeEntries, Optional<MultiNoiseBiomeSource.Instance> instance, CallbackInfo ci) {
-        biolith$isNether = instance.isPresent() && instance.get().preset().id.equals(new Identifier("nether"));
-        biolith$isOverworld = instance.isPresent() && instance.get().preset().id.equals(new Identifier("overworld"));
+    @Inject(method = "<init>", at = @At("RETURN"))
+    private void biolith$MultiNoiseBiomeSource(Either<MultiNoiseUtil.Entries<RegistryEntry<Biome>>, RegistryEntry<MultiNoiseBiomeSourceParameterList>> biomeEntries, CallbackInfo ci) {
+        biomeEntries.ifRight(parameterList -> {
+            biolith$isNether = parameterList.matchesId(MultiNoiseBiomeSourceParameterList.Preset.NETHER.id());
+            biolith$isOverworld = parameterList.matchesId(MultiNoiseBiomeSourceParameterList.Preset.OVERWORLD.id());
+        });
     }
 
     // We calculate the vanilla/datapack biome, then we apply any overlays.
@@ -40,7 +38,7 @@ public class MixinMultiNoiseBiomeSource {
     private void biolith$getBiome(int x, int y, int z, MultiNoiseUtil.MultiNoiseSampler noise, CallbackInfoReturnable<RegistryEntry<Biome>> cir) {
         MultiNoiseUtil.NoiseValuePoint noisePoint = noise.sample(x, y, z);
         BiolithFittestNodes<RegistryEntry<Biome>> fittestNodes =
-                ((InterfaceSearchTree<RegistryEntry<Biome>>)(Object) biomeEntries.tree)
+                ((InterfaceSearchTree<RegistryEntry<Biome>>)(Object) getBiomeEntries().tree)
                         .biolith$searchTreeGet(noisePoint, MultiNoiseUtil.SearchTree.TreeNode::getSquaredDistance);
 
         cir.setReturnValue((fittestNodes.ultimate()).value);
