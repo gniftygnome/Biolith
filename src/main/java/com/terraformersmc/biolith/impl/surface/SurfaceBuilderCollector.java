@@ -8,8 +8,8 @@ import java.util.Set;
 public class SurfaceBuilderCollector {
     private static final Set<BiolithSurfaceBuilder> surfaceBuilders = new HashSet<>(64);
 
-    public static boolean add(BiolithSurfaceBuilder surfaceBuilder) {
-        return surfaceBuilders.add(surfaceBuilder);
+    public static void add(BiolithSurfaceBuilder surfaceBuilder) {
+        surfaceBuilders.add(surfaceBuilder);
     }
 
     public static Set<BiolithSurfaceBuilder> getBuilders() {

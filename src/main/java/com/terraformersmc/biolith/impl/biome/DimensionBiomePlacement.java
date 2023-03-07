@@ -23,6 +23,7 @@ public abstract class DimensionBiomePlacement {
     protected Registry<Biome> biomeRegistry;
     protected BiolithState state;
     protected OpenSimplexNoise replacementNoise;
+    protected int[] seedlets = new int[8];
     protected Random seedRandom;
     protected final HashMap<RegistryKey<Biome>, ReplacementRequestSet> replacementRequests = new HashMap<>(256);
     protected final HashMap<RegistryKey<Biome>, SubBiomeRequestSet> subBiomeRequests = new HashMap<>(256);
@@ -44,6 +45,15 @@ public abstract class DimensionBiomePlacement {
         seedRandom = new Random(seed);
         replacementRequests.forEach((biomeKey, requestSet) -> requestSet.complete(biomeRegistry));
         subBiomeRequests.forEach((biomeKey, requestSet) -> requestSet.complete(biomeRegistry));
+
+        seedlets[0] = (int) (seed       & 0xffL);
+        seedlets[1] = (int) (seed >>  8 & 0xffL);
+        seedlets[2] = (int) (seed >> 16 & 0xffL);
+        seedlets[3] = (int) (seed >> 24 & 0xffL);
+        seedlets[4] = (int) (seed >> 32 & 0xffL);
+        seedlets[5] = (int) (seed >> 40 & 0xffL);
+        seedlets[6] = (int) (seed >> 48 & 0xffL);
+        seedlets[7] = (int) (seed >> 56 & 0xffL);
     }
 
     public void addReplacement(RegistryKey<Biome> target, RegistryKey<Biome> biome, double rate) {
@@ -69,10 +79,14 @@ public abstract class DimensionBiomePlacement {
 
     // TODO: This is a lazy, stupid, wrong approximation of normalizing simplex values in [-1,1] to unbiased values in [0,1].
     protected double normalize(double value) {
-        return MathHelper.clamp((value / 0.6D + 1D) / 2D, 0D, 1D);
+        return MathHelper.clamp(value * 0.6D + 0.5D, 0D, 1D);
     }
 
     protected record ReplacementRequest(RegistryKey<Biome> biome, double rate, RegistryEntry<Biome> biomeEntry, double scaled) {
+        public ReplacementRequest {
+            rate = MathHelper.clamp(rate, 0D, 1D);
+        }
+
         static ReplacementRequest of(RegistryKey<Biome> biome, double rate) {
             return new ReplacementRequest(biome, rate, null, rate);
         }
@@ -105,7 +119,6 @@ public abstract class DimensionBiomePlacement {
     protected class ReplacementRequestSet {
         RegistryKey<Biome> target;
         List<ReplacementRequest> requests = new ArrayList<>(8);
-        double scale = 0D;
 
         ReplacementRequestSet(RegistryKey<Biome> target) {
             this.target = target;
@@ -124,7 +137,10 @@ public abstract class DimensionBiomePlacement {
         }
 
         void complete(Registry<Biome> biomeRegistry) {
-            double totalScale = 0D;
+            double maxRate = 0D;
+            double total = 0D;
+            double vanilla;
+            double scale;
 
             // Re-open the list for modification.
             requests = new ArrayList<>(requests);
@@ -133,16 +149,20 @@ public abstract class DimensionBiomePlacement {
             requests.removeIf(request -> request.biome.equals(VANILLA_PLACEHOLDER));
 
             // Calculate biome distribution scale.
+            //
             for (ReplacementRequest request : requests) {
-                totalScale += request.rate;
-                if (request.rate > scale) {
-                    scale = request.rate;
+                total += request.rate;
+                if (request.rate > maxRate) {
+                    maxRate = request.rate;
                 }
             }
-            double fullScale = totalScale / scale;
+            vanilla = MathHelper.clamp(1D - maxRate, 0D, 1D);
+            scale = total + vanilla;
 
             // Add a special request with a place-holder for the vanilla biome, if/when it still generates.
-            requests.add(new ReplacementRequest(VANILLA_PLACEHOLDER, 0D, null, 1.0D - scale));
+            if (vanilla > 0D) {
+                requests.add(new ReplacementRequest(VANILLA_PLACEHOLDER, vanilla, null, vanilla / scale));
+            }
 
             // Update saved state with any additions and fetch the new order.
             Collections.shuffle(requests, seedRandom);
@@ -151,7 +171,7 @@ public abstract class DimensionBiomePlacement {
 
             // Finalize the request list and store it in state order.
             requests = requests.stream()
-                    .map(request -> request.complete(biomeRegistry, request.rate / fullScale))
+                    .map(request -> request.complete(biomeRegistry, request.rate / scale))
                     .sorted(Comparator.comparingInt(request -> sortOrder.indexOf(request.biome)))
                     .toList();
         }

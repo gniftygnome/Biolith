@@ -27,12 +27,14 @@ public class OverworldBiomePlacement extends DimensionBiomePlacement {
         RegistryEntry<Biome> biomeEntry = fittestNodes.ultimate().value;
         RegistryKey<Biome> biomeKey = biomeEntry.getKey().orElseThrow();
 
-        double localNoise = normalize(replacementNoise.sample((double)x / 256D, (double)z / 256D));
+        double localNoise = -1D;
         Vector2f localRange = null;
 
         // select phase one -- direct replacements
         if (replacementRequests.containsKey(biomeKey)) {
             double locus = 0D;
+            localNoise = getLocalNoise(x, y, z);
+
             for (ReplacementRequest request : replacementRequests.get(biomeKey).requests) {
                 locus += request.scaled();
                 if (locus > localNoise) {
@@ -49,6 +51,10 @@ public class OverworldBiomePlacement extends DimensionBiomePlacement {
 
         // select phase two -- sub-biome replacements
         if (subBiomeRequests.containsKey(biomeKey)) {
+            if (localNoise < 0D) {
+                localNoise = getLocalNoise(x, y, z);
+            }
+
             for (SubBiomeRequest subRequest : subBiomeRequests.get(biomeKey).requests) {
                 if (subRequest.matcher().matches(fittestNodes, noisePoint, localRange, (float) localNoise)) {
                     biomeEntry = subRequest.biomeEntry();
@@ -59,6 +65,21 @@ public class OverworldBiomePlacement extends DimensionBiomePlacement {
         }
 
         return biomeEntry;
+    }
+
+    double getLocalNoise(int x, int y, int z) {
+        double localNoise;
+
+        // Three octaves to give some edge fuzz
+        localNoise  = replacementNoise.sample((double)(x + seedlets[0]) / 1024D, (double)(z + seedlets[1]) / 1024D);
+        localNoise += replacementNoise.sample((double)(x + seedlets[2]) /  256D, (double)(z + seedlets[3]) /  256D) / 8D;
+        localNoise += replacementNoise.sample((double)(x + seedlets[4]) /   64D, (double)(z + seedlets[5]) /   64D) / 16D;
+        localNoise += replacementNoise.sample((double)(x + seedlets[6]) /   16D, (double)(z + seedlets[7]) /   16D) / 32D;
+
+        // Scale the result back to amplitude 1 and then normalize
+        localNoise = normalize(localNoise / 1.21875D);
+
+        return localNoise;
     }
 
     // NOTE: biomeRegistry is not yet available when writeBiomeParameters() is called by VanillaBiomeParameters.
